@@ -4,6 +4,7 @@ import type { Route } from "./+types/notifications";
 import { requireUserId } from "~/lib/access.server";
 import { parseJsonBody } from "~/lib/validation";
 import { db } from "~/db";
+import { catalog, isEventKey } from "~/lib/notifications/catalog";
 import {
   countUnreadNotifications,
   listNotifications,
@@ -31,6 +32,9 @@ function present(row: NotificationRow) {
     link: row.link,
     readAt: row.readAt,
     createdAt: row.createdAt,
+    // The catalog is the single source of row icons; "Bell" is the bell's
+    // own fallback name for an unknown one.
+    icon: isEventKey(row.eventKey) ? catalog[row.eventKey].icon : "Bell",
   };
 }
 

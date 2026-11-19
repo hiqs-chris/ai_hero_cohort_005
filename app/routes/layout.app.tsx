@@ -263,7 +263,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countryTierInfo={countryTierInfo}
         countries={countries}
       />
-      <PushRegistration />
+      <PushRegistration authenticated={currentUser !== null} />
       <Toaster position="bottom-right" richColors closeButton />
     </div>
   );

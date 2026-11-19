@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
-import { Bell, Inbox, Receipt, type LucideIcon } from "lucide-react";
+import { Bell, CircleHelp, Inbox, Receipt, type LucideIcon } from "lucide-react";
 import { cn, formatRelativeTime } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { Button } from "~/components/ui/button";
@@ -8,7 +8,7 @@ import { PushPrePrompt } from "~/components/push-pre-prompt";
 
 type NotificationItem = {
   id: number;
-  eventKey: string;
+  icon: string;
   title: string;
   body: string;
   link: string;
@@ -23,10 +23,14 @@ type NotificationsPayload = {
   unreadCount: number;
 };
 
-const EVENT_ICONS: Record<string, LucideIcon> = {
-  "refund_request.raised": Receipt,
-  "refund_request.received": Inbox,
-  "refund_request.decided": Inbox,
+// Rows carry the catalog's lucide icon name, so the catalog
+// (app/lib/notifications/catalog.ts) stays the single source of truth for
+// row icons — this map only resolves the names it knows; Bell covers a
+// name not mapped here yet.
+const ICONS: Record<string, LucideIcon> = {
+  Receipt,
+  Inbox,
+  CircleHelp,
 };
 
 export function NotificationBell({
@@ -156,6 +160,7 @@ export function NotificationBell({
               </p>
             ) : rows.length === 0 ? (
               <div className="space-y-3 px-4 py-8 text-center">
+                <p className="text-sm font-medium">You're all caught up</p>
                 <p className="text-sm text-muted-foreground">
                   Refund Requests and Questions can reach your phone. Push
                   carries notification events only — receipts and decisions
@@ -174,7 +179,7 @@ export function NotificationBell({
               </div>
             ) : (
               rows.map((notification) => {
-                const Icon = EVENT_ICONS[notification.eventKey] ?? Bell;
+                const Icon = ICONS[notification.icon] ?? Bell;
                 const unread = notification.readAt === null;
                 return (
                   <button

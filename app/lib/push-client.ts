@@ -1,7 +1,9 @@
-// The single-gesture subscribe flow of ADR-0015: one user gesture calls
-// requestPermission, pushManager.subscribe, and the /devices POST, with no
-// await between the click and the native prompt — as iOS requires. The
-// silent page-load upsert (push-registration.tsx) is the self-healing half.
+// The single-gesture subscribe flow of ADR-0015: one user gesture registers
+// the service worker, requests permission, subscribes with the VAPID public
+// key, and posts the row, all in the one handler — as iOS requires. The
+// registration awaits run before the prompt so nothing waits between the
+// grant and subscribe. The silent page-load upsert (push-registration.tsx)
+// is the self-healing half.
 
 // The same browser-and-device label the service worker derives, kept in step
 // with public/sw.js: "Safari · iPhone".
@@ -60,10 +62,11 @@ export type TurnOnOutcome =
   | "no-key"; // push not configured server-side — the prompt stays hidden
 
 /**
- * The one-gesture turn-on: requestPermission → subscribe with the VAPID key
- * → POST /devices, all inside the caller's click handler. A POST failure is
- * swallowed on purpose — the subscription exists, so the next page load's
- * silent upsert repairs the row. Subscribe failures throw to the caller.
+ * The one-gesture turn-on: register the service worker → requestPermission
+ * → subscribe with the VAPID key → POST /devices, all inside the caller's
+ * click handler. A POST failure is swallowed on purpose — the subscription
+ * exists, so the next page load's silent upsert repairs the row. Subscribe
+ * failures throw to the caller.
  */
 export async function turnOnPush(
   vapidPublicKey: string | null
@@ -73,14 +76,19 @@ export async function turnOnPush(
     return "unsupported";
   }
 
+  // Same script URL and scope resolve to one registration, so this is a
+  // no-op when the self-healing path already registered it. Both awaits sit
+  // before the prompt on purpose: iOS grants subscribe only the gesture's
+  // transient activation, and a cold first run must not spend it here.
+  // Registering before a possible denial is harmless — the self-healing
+  // path registers on every authenticated page load anyway.
+  await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+  const registration = await navigator.serviceWorker.ready;
+
   const permission = await Notification.requestPermission();
   if (permission === "denied") return "denied";
   if (permission !== "granted") return "dismissed";
 
-  // Same script URL and scope resolve to one registration, so this is a
-  // no-op when the self-healing path already registered it.
-  await navigator.serviceWorker.register("/sw.js", { scope: "/" });
-  const registration = await navigator.serviceWorker.ready;
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
     applicationServerKey: applicationServerKey(vapidPublicKey),

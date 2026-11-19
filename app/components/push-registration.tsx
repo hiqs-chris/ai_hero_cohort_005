@@ -7,9 +7,19 @@ import { subscriptionBody } from "~/lib/push-client";
 // browser rotated, or a row the server lost, is repaired without asking the
 // user to re-enable anything. The visible subscribe prompt is ticket #19's
 // (app/components/push-pre-prompt.tsx, via turnOnPush in push-client.ts).
+//
+// Both effects wait for `authenticated`: a subscription needs an owner, and
+// a signed-out mark-read POST has none — it would only 401. So logged-out
+// pages never even register the worker.
 
-export function PushRegistration() {
+export function PushRegistration({
+  authenticated,
+}: {
+  authenticated: boolean;
+}) {
   useEffect(() => {
+    if (!authenticated) return;
+
     let cancelled = false;
 
     async function registerAndUpsert() {
@@ -43,13 +53,15 @@ export function PushRegistration() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authenticated]);
 
   // A clicked notification opens the app with ?notification=<id> (public/sw.js
   // appends it). Mark that notification read, then strip the param so a
   // refresh or a shared link doesn't re-mark it. Passing window.history.state
   // through keeps React Router's history idx intact.
   useEffect(() => {
+    if (!authenticated) return;
+
     const id = Number(new URLSearchParams(window.location.search).get("notification"));
     if (!Number.isInteger(id) || id <= 0) return;
 
@@ -68,7 +80,7 @@ export function PushRegistration() {
         const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
         window.history.replaceState(window.history.state, "", url);
       });
-  }, []);
+  }, [authenticated]);
 
   return null;
 }

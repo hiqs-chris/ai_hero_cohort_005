@@ -1,8 +1,11 @@
 // ─── Push transport ───
-// Real Web Push lands in a later ticket; until then every push send is a
-// no-op that logs, mirroring the mailer's outbox fallback. The transport
-// reports failures as a status result, not a throw: a 404 or 410 means the
-// subscription is gone and the caller deletes the Device row.
+// Real Web Push goes through the web-push library when every VAPID_* env
+// variable is set; otherwise every push send is a no-op that logs, mirroring
+// the mailer's outbox fallback. The transport reports failures as a status
+// result, not a throw: a 404 or 410 means the subscription is gone and the
+// caller deletes the Device row.
+
+import { sendNotification, WebPushError } from "web-push";
 
 export type PushSubscription = {
   endpoint: string;
@@ -24,17 +27,62 @@ export interface PushTransport {
   ): Promise<{ status: number }>;
 }
 
+export type VapidDetails = {
+  subject: string;
+  publicKey: string;
+  privateKey: string;
+};
+
+export function webPushTransport(
+  vapid: VapidDetails,
+  send: typeof sendNotification = sendNotification
+): PushTransport {
+  return {
+    async send(subscription, payload) {
+      try {
+        await send(
+          {
+            endpoint: subscription.endpoint,
+            keys: { p256dh: subscription.p256dh, auth: subscription.auth },
+          },
+          JSON.stringify(payload),
+          { vapidDetails: vapid }
+        );
+        return { status: 200 };
+      } catch (error) {
+        if (error instanceof WebPushError) {
+          return { status: error.statusCode };
+        }
+        console.error(
+          `[push] send failed for ${subscription.endpoint}`,
+          error
+        );
+        return { status: 500 };
+      }
+    },
+  };
+}
+
+export function vapidFromEnv(
+  env: Record<string, string | undefined> = process.env
+): VapidDetails | null {
+  const subject = env.VAPID_SUBJECT;
+  const publicKey = env.VAPID_PUBLIC_KEY;
+  const privateKey = env.VAPID_PRIVATE_KEY;
+  if (!subject || !publicKey || !privateKey) return null;
+  return { subject, publicKey, privateKey };
+}
+
 export function noopPushTransport(): PushTransport {
   return {
     async send(subscription, payload) {
-      console.log(
-        `[push:noop] ${payload.title} → ${subscription.endpoint}`
-      );
+      console.log(`[push:noop] ${payload.title} → ${subscription.endpoint}`);
       return { status: 200 };
     },
   };
 }
 
 export function defaultPushTransport(): PushTransport {
-  return noopPushTransport();
+  const vapid = vapidFromEnv();
+  return vapid ? webPushTransport(vapid) : noopPushTransport();
 }

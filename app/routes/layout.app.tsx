@@ -2,9 +2,14 @@ import { Outlet } from "react-router";
 import type { Route } from "./+types/layout.app";
 import { Sidebar } from "~/components/sidebar";
 import { DevUI } from "~/components/dev-ui";
+import { PushRegistration } from "~/components/push-registration";
 import { Toaster } from "sonner";
 import { getCurrentUserId, getDevCountry } from "~/lib/session";
 import { getCountryTierInfo, COUNTRIES } from "~/lib/ppp";
+import {
+  countUnreadNotifications,
+  pruneReadNotifications,
+} from "~/lib/notifications/inbox.server";
 import { eq, and, or, sql, desc } from "drizzle-orm";
 import { db } from "~/db";
 import {
@@ -174,6 +179,12 @@ function getRecentlyProgressedCourses(userId: number, limit: number = 3) {
 export async function loader({ request }: Route.LoaderArgs) {
   const users = getAllUsers();
   const currentUserId = await getCurrentUserId(request);
+  if (currentUserId) {
+    pruneReadNotifications(db, currentUserId, new Date());
+  }
+  const unreadNotificationCount = currentUserId
+    ? countUnreadNotifications(db, currentUserId)
+    : 0;
   const currentUser = currentUserId ? getUserById(currentUserId) : null;
   const devCountry = await getDevCountry(request);
   const countryTierInfo = getCountryTierInfo(devCountry);
@@ -213,6 +224,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     countryTierInfo,
     countries: COUNTRIES,
     isTeamAdmin: currentUserId ? isTeamAdmin(currentUserId) : false,
+    unreadNotificationCount,
+    // Ticket #19's subscribe prompt reads this to applyServerKey; null means
+    // push is not configured and the prompt must stay hidden.
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? null,
   };
 }
 
@@ -225,6 +240,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countryTierInfo,
     countries,
     isTeamAdmin: userIsTeamAdmin,
+    unreadNotificationCount,
+    vapidPublicKey,
   } = loaderData;
 
   return (
@@ -233,6 +250,8 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         currentUser={currentUser}
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
+        unreadNotificationCount={unreadNotificationCount}
+        vapidPublicKey={vapidPublicKey}
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />
@@ -244,6 +263,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         countryTierInfo={countryTierInfo}
         countries={countries}
       />
+      <PushRegistration authenticated={currentUser !== null} />
       <Toaster position="bottom-right" richColors closeButton />
     </div>
   );

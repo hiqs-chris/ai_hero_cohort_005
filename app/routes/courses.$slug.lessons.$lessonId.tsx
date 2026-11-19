@@ -11,6 +11,7 @@ import {
 } from "~/components/comment-thread";
 import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { createComment } from "~/lib/comments.server";
+import { deliver } from "~/lib/notifications/emit.server";
 import { db } from "~/db";
 import {
   categories,
@@ -868,13 +869,16 @@ export async function action({ params, request }: Route.ActionArgs) {
         if (!parsed.success) {
           return { ok: false, error: "Enter a comment before posting." };
         }
-        createComment(
+        const { plans } = createComment(
           db,
           currentUserId,
           lessonId,
           parsed.data.parentId ?? null,
           parsed.data.body
         );
+        for (const plan of plans) {
+          await deliver(db, plan);
+        }
         return { ok: true };
       }
 

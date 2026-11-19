@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { RefundStatus, UserRole } from "~/db/schema";
 import {
   catalog,
+  type QuestionAskedPayload,
   type RefundRequestDecidedPayload,
   type RefundRequestRaisedPayload,
   type RefundRequestReceivedPayload,
@@ -244,5 +245,51 @@ describe("refund_request.decided", () => {
         "— The Cadence team",
       ].join("\n")
     );
+  });
+});
+
+describe("question.asked", () => {
+  const entry = catalog["question.asked"];
+
+  const asked: QuestionAskedPayload = {
+    instructorId: 4,
+    courseTitle: "Test Course",
+    lessonTitle: "First Lesson",
+    askerName: "Liam Buyer",
+    question: "What is a type?",
+  };
+
+  it("renders the in-app row with the lesson and asker", () => {
+    expect(entry.renderInApp(asked)).toEqual({
+      title: "New question",
+      body: "Test Course · First Lesson · Liam Buyer",
+      link: "/instructor/questions",
+    });
+  });
+
+  it("renders the instructor email, ending with the manage-settings footer", () => {
+    expect(
+      entry.renderEmail(asked, aUser("Test Instructor", "instructor@example.com"))
+    ).toEqual({
+      subject: "New question on Test Course",
+      body: [
+        "Hi Test Instructor,",
+        "",
+        'Liam Buyer asked a question on "Test Course".',
+        "",
+        "Lesson: First Lesson",
+        "",
+        '"What is a type?"',
+        "",
+        "Reply from your question queue, newest first:",
+        "https://cadence.test/instructor/questions",
+        "",
+        "Manage your notification settings: https://cadence.test/settings",
+      ].join("\n"),
+    });
+  });
+
+  it("defaults push to the in-app render", () => {
+    expect(entry.renderPush).toBeUndefined();
   });
 });

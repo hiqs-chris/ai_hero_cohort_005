@@ -1,8 +1,14 @@
-import { NavLink, Form } from "react-router";
+import { NavLink, Form, useSearchParams } from "react-router";
 import { useState, useEffect } from "react";
 import { cn } from "~/lib/utils";
 import { UserRole } from "~/db/schema";
 import { UserAvatar } from "~/components/user-avatar";
+// PROTOTYPE (wayfinder #10) — throwaway, revert with the prototype file.
+import {
+  PrototypeBellA,
+  PrototypeBellB,
+  PrototypeBellC,
+} from "~/components/prototype-notifications";
 import {
   BookOpen,
   ChartColumn,
@@ -120,6 +126,9 @@ export function Sidebar({
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const [isDark, setIsDark] = useState(false);
+  // PROTOTYPE (wayfinder #10) — ?variant= picks a notification-surface design.
+  const [searchParams] = useSearchParams();
+  const prototypeVariant = searchParams.get("variant");
 
   useEffect(() => {
     setIsDark(document.documentElement.classList.contains("dark"));
@@ -140,6 +149,10 @@ export function Sidebar({
         <NavLink to="/" className="text-lg font-bold tracking-tight">
           Cadence
         </NavLink>
+        {/* PROTOTYPE (wayfinder #10) */}
+        {prototypeVariant === "C" && currentUser && (
+          <PrototypeBellC role={currentUser.role} />
+        )}
       </div>
 
       <nav className="flex-1 space-y-1 p-3">
@@ -220,6 +233,10 @@ export function Sidebar({
       )}
 
       <div className="border-t border-sidebar-border p-3 space-y-1">
+        {/* PROTOTYPE (wayfinder #10) */}
+        {prototypeVariant === "A" && currentUser && (
+          <PrototypeBellA role={currentUser.role} />
+        )}
         <button
           onClick={toggleDarkMode}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/70 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
@@ -242,6 +259,10 @@ export function Sidebar({
                 {currentUser.role}
               </div>
             </div>
+            {/* PROTOTYPE (wayfinder #10) */}
+            {prototypeVariant === "B" && currentUser && (
+              <PrototypeBellB role={currentUser.role} />
+            )}
             <NavLink
               to="/settings"
               title="Settings"

@@ -12,11 +12,16 @@ import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
 import { UserRole, RefundStatus, users } from "~/db/schema";
 import { AlertTriangle } from "lucide-react";
-import { data, isRouteErrorResponse, Link } from "react-router";
+import { data, isRouteErrorResponse, Link, useSearchParams } from "react-router";
 import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+// PROTOTYPE (wayfinder #10) — throwaway, revert with the prototype file.
+import {
+  PrototypeNotificationsSettings,
+  PrototypeSwitcher,
+} from "~/components/prototype-notifications";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -104,6 +109,9 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
   ).length;
   const fetcher = useFetcher();
   const nameInputRef = useRef<HTMLInputElement>(null);
+  // PROTOTYPE (wayfinder #10) — ?variant= picks a notification-surface design.
+  const [searchParams] = useSearchParams();
+  const prototypeVariant = searchParams.get("variant");
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
@@ -188,6 +196,14 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardContent>
       </Card>
 
+      {/* PROTOTYPE (wayfinder #10) — the notifications section of Settings */}
+      {prototypeVariant && (
+        <PrototypeNotificationsSettings
+          variant={prototypeVariant}
+          role={user.role}
+        />
+      )}
+
       {refundRequests.length > 0 && (
         <Card className="mt-8 max-w-md">
           <CardHeader>
@@ -235,6 +251,9 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       )}
+
+      {/* PROTOTYPE (wayfinder #10) — floating variant switcher, dev only */}
+      <PrototypeSwitcher />
     </div>
   );
 }

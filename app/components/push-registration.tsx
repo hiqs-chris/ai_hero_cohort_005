@@ -78,5 +78,30 @@ export function PushRegistration() {
     };
   }, []);
 
+  // A clicked notification opens the app with ?notification=<id> (public/sw.js
+  // appends it). Mark that notification read, then strip the param so a
+  // refresh or a shared link doesn't re-mark it. Passing window.history.state
+  // through keeps React Router's history idx intact.
+  useEffect(() => {
+    const id = Number(new URLSearchParams(window.location.search).get("notification"));
+    if (!Number.isInteger(id) || id <= 0) return;
+
+    fetch("/notifications", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id }),
+    })
+      .catch(() => {
+        // Best-effort: an unread that stays unread tries again next visit.
+      })
+      .finally(() => {
+        const search = new URLSearchParams(window.location.search);
+        search.delete("notification");
+        const query = search.toString();
+        const url = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+        window.history.replaceState(window.history.state, "", url);
+      });
+  }, []);
+
   return null;
 }

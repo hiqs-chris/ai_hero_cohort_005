@@ -68,6 +68,9 @@ async function seed() {
     DROP TABLE IF EXISTS comments;
     DROP TABLE IF EXISTS course_ratings;
     DROP TABLE IF EXISTS video_watch_events;
+    DROP TABLE IF EXISTS notification_preferences;
+    DROP TABLE IF EXISTS devices;
+    DROP TABLE IF EXISTS notifications;
     DROP TABLE IF EXISTS quiz_answers;
     DROP TABLE IF EXISTS quiz_attempts;
     DROP TABLE IF EXISTS quiz_options;

@@ -42,6 +42,12 @@ export enum TeamMemberRole {
   Member = "member",
 }
 
+export enum NotificationChannel {
+  Email = "email",
+  InApp = "in_app",
+  Push = "push",
+}
+
 // ─── Tables ───
 
 export const users = sqliteTable("users", {
@@ -370,6 +376,74 @@ export const videoWatchEvents = sqliteTable("video_watch_events", {
     .references(() => lessons.id),
   eventType: text("event_type").notNull(),
   positionSeconds: real("position_seconds").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
+});
+
+// ─── Notifications ───
+// A Notification is a rendered snapshot, written at emit time inside the
+// happening's transaction (docs/adr/0018). Kind lives in the Notification
+// Catalog (app/lib/notifications/catalog.ts), never here: rows reference
+// events by event_key text. See docs/specs/notifications.md.
+
+export const notifications = sqliteTable(
+  "notifications",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    eventKey: text("event_key").notNull(), // a Notification Catalog key
+    title: text("title").notNull(), // in-app render, snapshotted at emit
+    body: text("body").notNull(),
+    link: text("link").notNull(), // click-through target
+    readAt: text("read_at"), // null = Unread Notification (ADR-0016)
+    createdAt: text("created_at")
+      .notNull()
+      .$defaultFn(() => new Date().toISOString()),
+  },
+  (t) => [index("notifications_user_created_idx").on(t.userId, t.createdAt)]
+);
+
+// Preferences are sparse off-rows: one row per turned-off cell, absence means
+// on. Rows only ever hold Notification Event keys — Transactional Events are
+// exempt — and that is enforced on write, not by the schema.
+export const notificationPreferences = sqliteTable(
+  "notification_preferences",
+  {
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    userId: integer("user_id")
+      .notNull()
+      .references(() => users.id),
+    eventKey: text("event_key").notNull(), // a Notification Event's key, never transactional
+    channel: text("channel").notNull().$type<NotificationChannel>(),
+  },
+  (t) => [
+    uniqueIndex("notification_preferences_user_event_channel_unique").on(
+      t.userId,
+      t.eventKey,
+      t.channel
+    ),
+  ]
+);
+
+// A Device is one row per push subscription, keyed on unique endpoint for the
+// silent page-load upsert (ADR-0015). Fully used by later tickets; the send
+// plan already carries pushes per Device.
+export const devices = sqliteTable("devices", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  userId: integer("user_id")
+    .notNull()
+    .references(() => users.id),
+  endpoint: text("endpoint").notNull().unique(),
+  p256dh: text("p256dh").notNull(),
+  auth: text("auth").notNull(),
+  expirationTime: text("expiration_time"), // stored as data; nothing acts on it
+  label: text("label").notNull(), // auto-derived, e.g. "Safari · iPhone"
+  lastSeenAt: text("last_seen_at")
+    .notNull()
+    .$defaultFn(() => new Date().toISOString()),
   createdAt: text("created_at")
     .notNull()
     .$defaultFn(() => new Date().toISOString()),

@@ -2,8 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { eq } from "drizzle-orm";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, notificationRows, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { NotificationChannel, RefundStatus, UserRole } from "~/db/schema";
 import { outboxTransport } from "~/lib/mailer.server";
@@ -97,22 +96,14 @@ function turnOff(
   db.insert(schema.notificationPreferences).values({ userId, eventKey, channel }).run();
 }
 
-function notificationRows(userId: number) {
-  return db
-    .select()
-    .from(schema.notifications)
-    .where(eq(schema.notifications.userId, userId))
-    .all();
-}
-
 describe("emit", () => {
   describe("recipient resolution", () => {
     it("tells every Platform Admin about a raised Refund Request", () => {
       const plan = emit(db, "refund_request.raised", raisedPayload());
 
-      expect(notificationRows(platformAdmin.id)).toHaveLength(1);
-      expect(notificationRows(secondAdmin.id)).toHaveLength(1);
-      expect(notificationRows(base.user.id)).toHaveLength(0);
+      expect(notificationRows(db, platformAdmin.id)).toHaveLength(1);
+      expect(notificationRows(db, secondAdmin.id)).toHaveLength(1);
+      expect(notificationRows(db, base.user.id)).toHaveLength(0);
       expect(plan.emails.map((email) => email.to)).toEqual(
         expect.arrayContaining(["pat@example.com", "sam@example.com"])
       );
@@ -122,7 +113,7 @@ describe("emit", () => {
     it("tells the buyer their Refund Request was received", () => {
       const plan = emit(db, "refund_request.received", receivedPayload());
 
-      expect(notificationRows(base.user.id)).toHaveLength(1);
+      expect(notificationRows(db, base.user.id)).toHaveLength(1);
       expect(plan.emails.map((email) => email.to)).toEqual(["test@example.com"]);
       expect(plan.pushes).toHaveLength(0);
     });
@@ -134,7 +125,7 @@ describe("emit", () => {
         decidedPayload(RefundStatus.Approved, null)
       );
 
-      expect(notificationRows(base.user.id)).toHaveLength(1);
+      expect(notificationRows(db, base.user.id)).toHaveLength(1);
       expect(plan.emails.map((email) => email.to)).toEqual(["test@example.com"]);
       expect(plan.pushes).toHaveLength(0);
     });
@@ -148,7 +139,7 @@ describe("emit", () => {
       const plan = emit(db, "refund_request.raised", raisedPayload());
 
       expect(plan.emails.map((email) => email.to)).toEqual(["sam@example.com"]);
-      expect(notificationRows(platformAdmin.id)).toHaveLength(1);
+      expect(notificationRows(db, platformAdmin.id)).toHaveLength(1);
       expect(
         plan.pushes.filter((push) => push.device.userId === platformAdmin.id)
       ).toHaveLength(1);
@@ -160,7 +151,7 @@ describe("emit", () => {
 
       const plan = emit(db, "refund_request.raised", raisedPayload());
 
-      expect(notificationRows(platformAdmin.id)).toHaveLength(0);
+      expect(notificationRows(db, platformAdmin.id)).toHaveLength(0);
       expect(plan.emails.map((email) => email.to)).toContain("pat@example.com");
       const push = plan.pushes.find((candidate) => candidate.device.id === device.id);
       expect(push?.payload.notificationId).toBeNull();
@@ -171,7 +162,7 @@ describe("emit", () => {
 
       const plan = emit(db, "refund_request.raised", raisedPayload());
 
-      const row = notificationRows(platformAdmin.id)[0];
+      const row = notificationRows(db, platformAdmin.id)[0];
       const push = plan.pushes.find((candidate) => candidate.device.id === device.id);
       expect(push?.payload).toEqual({
         title: "Refund request raised",
@@ -189,7 +180,7 @@ describe("emit", () => {
 
       const plan = emit(db, "refund_request.raised", raisedPayload());
 
-      expect(notificationRows(platformAdmin.id)).toHaveLength(0);
+      expect(notificationRows(db, platformAdmin.id)).toHaveLength(0);
       expect(plan.emails.map((email) => email.to)).toEqual(["sam@example.com"]);
       expect(plan.pushes).toHaveLength(0);
     });
@@ -204,7 +195,7 @@ describe("emit", () => {
 
       const plan = emit(db, "refund_request.received", receivedPayload());
 
-      expect(notificationRows(base.user.id)).toHaveLength(1);
+      expect(notificationRows(db, base.user.id)).toHaveLength(1);
       expect(plan.emails.map((email) => email.to)).toEqual(["test@example.com"]);
       expect(plan.pushes).toHaveLength(0);
       expect(plan.emails[0].body).not.toContain("Manage your notification settings");
@@ -215,7 +206,7 @@ describe("emit", () => {
     it("carries the rendered words at emit for a raised request", () => {
       emit(db, "refund_request.raised", raisedPayload());
 
-      expect(notificationRows(platformAdmin.id)[0]).toMatchObject({
+      expect(notificationRows(db, platformAdmin.id)[0]).toMatchObject({
         eventKey: "refund_request.raised",
         title: "Refund request raised",
         body: "Test Course · Individual Purchase · $79.00 · Test User",
@@ -227,7 +218,7 @@ describe("emit", () => {
     it("carries the rendered words at emit for a receipt", () => {
       emit(db, "refund_request.received", receivedPayload());
 
-      expect(notificationRows(base.user.id)[0]).toMatchObject({
+      expect(notificationRows(db, base.user.id)[0]).toMatchObject({
         eventKey: "refund_request.received",
         title: "Refund request received",
         body: '"Test Course" · $79.00',

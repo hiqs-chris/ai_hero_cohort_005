@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, notificationRows, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { UserRole } from "~/db/schema";
 import {
@@ -58,14 +58,6 @@ function addOtherStudent() {
     })
     .returning()
     .get();
-}
-
-function notificationRows(userId: number) {
-  return db
-    .select()
-    .from(schema.notifications)
-    .where(eq(schema.notifications.userId, userId))
-    .all();
 }
 
 beforeEach(() => {
@@ -194,10 +186,10 @@ describe("markAllNotificationsRead", () => {
 
     expect(marked).toBe(2);
     expect(
-      notificationRows(base.user.id).every((row) => row.readAt !== null)
+      notificationRows(db, base.user.id).every((row) => row.readAt !== null)
     ).toBe(true);
     expect(
-      notificationRows(other.id).every((row) => row.readAt === null)
+      notificationRows(db, other.id).every((row) => row.readAt === null)
     ).toBe(true);
   });
 });
@@ -215,7 +207,7 @@ describe("pruneReadNotifications", () => {
     const pruned = pruneReadNotifications(db, base.user.id, NOW);
 
     expect(pruned).toBe(1);
-    const remaining = notificationRows(base.user.id).map((row) => row.id);
+    const remaining = notificationRows(db, base.user.id).map((row) => row.id);
     expect(remaining).not.toContain(old.id);
     expect(remaining).toContain(atTheLimit.id);
     expect(remaining).toContain(recent.id);
@@ -227,7 +219,7 @@ describe("pruneReadNotifications", () => {
     const pruned = pruneReadNotifications(db, base.user.id, NOW);
 
     expect(pruned).toBe(0);
-    const rows = notificationRows(base.user.id);
+    const rows = notificationRows(db, base.user.id);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.id).toBe(unread.id);
   });
@@ -239,7 +231,7 @@ describe("pruneReadNotifications", () => {
     const pruned = pruneReadNotifications(db, base.user.id, NOW);
 
     expect(pruned).toBe(0);
-    expect(notificationRows(other.id).map((row) => row.id)).toEqual([
+    expect(notificationRows(db, other.id).map((row) => row.id)).toEqual([
       theirs.id,
     ]);
   });

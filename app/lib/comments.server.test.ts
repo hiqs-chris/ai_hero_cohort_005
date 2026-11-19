@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { eq } from "drizzle-orm";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, notificationRows, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { createComment } from "./comments.server";
 import { MAX_COMMENT_LENGTH } from "~/lib/comments";
@@ -181,14 +181,6 @@ describe("the question.asked birth rule", () => {
       .get().id;
   });
 
-  function notificationRows(userId: number) {
-    return db
-      .select()
-      .from(schema.notifications)
-      .where(eq(schema.notifications.userId, userId))
-      .all();
-  }
-
   it("tells the instructor when a Student asks a top-level question", () => {
     const { plans } = ask("What is a type?");
 
@@ -197,7 +189,7 @@ describe("the question.asked birth rule", () => {
       "instructor@example.com",
     ]);
     expect(plans[0].emails[0].subject).toBe("New question on Test Course");
-    expect(notificationRows(base.instructor.id)).toMatchObject([
+    expect(notificationRows(db, base.instructor.id)).toMatchObject([
       {
         eventKey: "question.asked",
         title: "New question",
@@ -219,10 +211,10 @@ describe("the question.asked birth rule", () => {
     expect(plans[0].emails.map((email) => email.to)).toEqual([
       "colleague@example.com",
     ]);
-    expect(notificationRows(colleague.id)).toMatchObject([
+    expect(notificationRows(db, colleague.id)).toMatchObject([
       { eventKey: "question.asked" },
     ]);
-    expect(notificationRows(base.instructor.id)).toHaveLength(0);
+    expect(notificationRows(db, base.instructor.id)).toHaveLength(0);
   });
 
   it("never tells anyone for a reply", () => {
@@ -243,7 +235,7 @@ describe("the question.asked birth rule", () => {
     );
 
     expect(plans).toEqual([]);
-    expect(notificationRows(base.instructor.id)).toHaveLength(0);
+    expect(notificationRows(db, base.instructor.id)).toHaveLength(0);
   });
 
   it("never tells anyone when a Platform Admin posts", () => {
@@ -266,7 +258,7 @@ describe("the question.asked birth rule", () => {
     );
 
     expect(plans).toEqual([]);
-    expect(notificationRows(base.instructor.id)).toHaveLength(0);
+    expect(notificationRows(db, base.instructor.id)).toHaveLength(0);
   });
 
   it("never tells the instructor for their own top-level comment", () => {
@@ -279,6 +271,6 @@ describe("the question.asked birth rule", () => {
     );
 
     expect(plans).toEqual([]);
-    expect(notificationRows(base.instructor.id)).toHaveLength(0);
+    expect(notificationRows(db, base.instructor.id)).toHaveLength(0);
   });
 });

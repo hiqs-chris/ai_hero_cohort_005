@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { and, eq } from "drizzle-orm";
-import { createTestDb, seedBaseData } from "~/test/setup";
+import { createTestDb, notificationRows, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { LessonProgressStatus, RefundStatus, UserRole } from "~/db/schema";
 import {
@@ -157,16 +157,8 @@ function getSeat(seatId: number) {
   return seat;
 }
 
-function notificationRows(userId: number) {
-  return db
-    .select()
-    .from(schema.notifications)
-    .where(eq(schema.notifications.userId, userId))
-    .all();
-}
-
 function decidedRow(userId: number) {
-  return notificationRows(userId).find(
+  return notificationRows(db, userId).find(
     (row) => row.eventKey === "refund_request.decided"
   );
 }
@@ -266,7 +258,7 @@ describe("raising a Refund Request", () => {
       "refund_request.raised",
       "refund_request.received",
     ]);
-    expect(notificationRows(platformAdmin.id)).toMatchObject([
+    expect(notificationRows(db, platformAdmin.id)).toMatchObject([
       {
         eventKey: "refund_request.raised",
         title: "Refund request raised",
@@ -274,7 +266,7 @@ describe("raising a Refund Request", () => {
         link: "/admin/refunds",
       },
     ]);
-    expect(notificationRows(base.user.id)).toMatchObject([
+    expect(notificationRows(db, base.user.id)).toMatchObject([
       {
         eventKey: "refund_request.received",
         title: "Refund request received",

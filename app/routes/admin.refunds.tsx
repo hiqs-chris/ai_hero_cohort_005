@@ -21,7 +21,7 @@ import {
   type RefundRequestForReview,
 } from "~/lib/refunds.server";
 import { RULE_BREAK_LABELS } from "~/lib/refund-rules";
-import { deliver } from "~/lib/notifications/emit.server";
+import { deliverAll } from "~/lib/notifications/emit.server";
 
 const refundFilterSchema = z
   .nativeEnum(RefundStatus)
@@ -127,9 +127,7 @@ export async function action({ request }: Route.ActionArgs) {
     return data({ error: result.error }, { status: result.status });
   }
 
-  for (const plan of result.plans) {
-    await deliver(db, plan);
-  }
+  await deliverAll(db, result.plans);
 
   return {
     success: true,

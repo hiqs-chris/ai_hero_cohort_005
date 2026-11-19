@@ -1,4 +1,5 @@
 import Database from "better-sqlite3";
+import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/better-sqlite3";
 import { migrate } from "drizzle-orm/better-sqlite3/migrator";
 import path from "path";
@@ -74,4 +75,19 @@ export function seedBaseData(testDb: ReturnType<typeof createTestDb>) {
     .get();
 
   return { user, instructor, category, course };
+}
+
+/**
+ * The recipient's notification rows — the snapshot the pipeline writes,
+ * for tests to assert against.
+ */
+export function notificationRows(
+  testDb: ReturnType<typeof createTestDb>,
+  userId: number
+) {
+  return testDb
+    .select()
+    .from(schema.notifications)
+    .where(eq(schema.notifications.userId, userId))
+    .all();
 }

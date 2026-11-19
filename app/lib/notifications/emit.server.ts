@@ -14,6 +14,7 @@ import {
   type PayloadFor,
   type Queryable,
 } from "./catalog";
+import type { DeviceRow } from "./devices.server";
 import { defaultPushTransport, type PushPayload, type PushTransport } from "./push.server";
 
 // ─── The notification pipeline ───
@@ -22,8 +23,6 @@ import { defaultPushTransport, type PushPayload, type PushTransport } from "./pu
 // matrix, renders every channel, and writes the immutable snapshot rows —
 // and deliver sends after the transaction commits, best-effort. See
 // docs/specs/notifications.md and ADR-0018.
-
-export type DeviceRow = typeof devices.$inferSelect;
 
 export type SendPlan = {
   eventKey: EventKey;
@@ -167,5 +166,18 @@ export async function deliver(
         error
       );
     }
+  }
+}
+
+/**
+ * Sends every plan after the transaction commits, best-effort — the loop
+ * every route action runs once its happening's transaction has committed.
+ */
+export async function deliverAll(
+  db: Queryable,
+  plans: SendPlan[]
+): Promise<void> {
+  for (const plan of plans) {
+    await deliver(db, plan);
   }
 }

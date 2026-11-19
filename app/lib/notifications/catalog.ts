@@ -295,3 +295,8 @@ export type EventKey = keyof typeof catalog;
 
 export type PayloadFor<K extends EventKey> =
   typeof catalog[K] extends CatalogEntry<infer P> ? P : never;
+
+/** Narrows an untrusted string to a catalog key. */
+export function isEventKey(key: string): key is EventKey {
+  return key in catalog;
+}

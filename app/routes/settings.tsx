@@ -19,7 +19,6 @@ import { formatPrice, formatRelativeTime } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
 import { getOffRows, setPreferenceOff, setPreferenceOn } from "~/lib/notifications/preferences.server";
 import { PushPrePrompt } from "~/components/push-pre-prompt";
-import type { EventKey } from "~/lib/notifications/catalog";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
@@ -151,9 +150,9 @@ export async function action({ request }: Route.ActionArgs) {
     }
 
     const { eventKey, channel, state } = parsed.data;
-    const { catalog } = await import("~/lib/notifications/catalog");
+    const { isEventKey } = await import("~/lib/notifications/catalog");
 
-    if (!(eventKey in catalog)) {
+    if (!isEventKey(eventKey)) {
       return data(
         { errors: { eventKey: "Unknown notification event." } },
         { status: 400 }
@@ -162,9 +161,9 @@ export async function action({ request }: Route.ActionArgs) {
 
     try {
       if (state === "on") {
-        setPreferenceOn(db, currentUserId, eventKey as EventKey, channel);
+        setPreferenceOn(db, currentUserId, eventKey, channel);
       } else {
-        setPreferenceOff(db, currentUserId, eventKey as EventKey, channel);
+        setPreferenceOff(db, currentUserId, eventKey, channel);
       }
     } catch (error) {
       throw data(
@@ -530,7 +529,10 @@ function PreferenceToggle({
   defaultOn: boolean;
   disabled: boolean;
 }) {
-  const fetcher = useFetcher();
+  const fetcher = useFetcher<{
+    success?: boolean;
+    errors?: Record<string, string>;
+  }>();
 
   // The last submission keeps rendering while it flies, so the switch
   // shows what the user just chose rather than the stale loader value.
@@ -539,9 +541,7 @@ function PreferenceToggle({
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.errors) {
-      const firstError = Object.values(fetcher.data.errors)[0] as
-        | string
-        | undefined;
+      const firstError = Object.values(fetcher.data.errors)[0];
       if (firstError) toast.error(firstError);
     }
   }, [fetcher.state, fetcher.data]);

@@ -14,7 +14,7 @@ import { AlertTriangle, CheckCircle2, ExternalLink } from "lucide-react";
 import { cn, daysSince, formatRelativeTime } from "~/lib/utils";
 import { MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { createComment } from "~/lib/comments.server";
-import { deliver } from "~/lib/notifications/emit.server";
+import { deliverAll } from "~/lib/notifications/emit.server";
 import { parseFormData } from "~/lib/validation";
 import { db } from "~/db";
 import {
@@ -176,9 +176,7 @@ export async function action({ request }: Route.ActionArgs) {
       question.id,
       parsed.data.body
     );
-    for (const plan of plans) {
-      await deliver(db, plan);
-    }
+    await deliverAll(db, plans);
   } catch (error) {
     if (error instanceof Error) {
       return { ok: false, error: error.message };

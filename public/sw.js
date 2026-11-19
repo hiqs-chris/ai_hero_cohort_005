@@ -90,6 +90,8 @@ self.addEventListener("pushsubscriptionchange", function (event) {
         var options = event.oldSubscription ? event.oldSubscription.options : {};
         var subscription = await self.registration.pushManager.subscribe(options);
         var json = subscription.toJSON();
+        // The same /devices body subscriptionBody in app/lib/push-client.ts
+        // builds, kept in step with it — the worker cannot import app code.
         await fetch("/devices", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

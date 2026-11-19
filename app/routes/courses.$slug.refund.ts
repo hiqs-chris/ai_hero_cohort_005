@@ -7,7 +7,7 @@ import { courses, purchases } from "~/db/schema";
 import { eq } from "drizzle-orm";
 import { parseFormData, parseParams } from "~/lib/validation";
 import { raiseRefundRequest } from "~/lib/refunds.server";
-import { deliver } from "~/lib/notifications/emit.server";
+import { deliverAll } from "~/lib/notifications/emit.server";
 
 const refundParamsSchema = z.object({
   slug: z.string().min(1),
@@ -72,9 +72,7 @@ export async function action({ params, request }: Route.ActionArgs) {
     throw data(result.error, { status: result.status });
   }
 
-  for (const plan of result.plans) {
-    await deliver(db, plan);
-  }
+  await deliverAll(db, result.plans);
 
   return redirect(result.kind === "team_licence" ? "/team" : "/settings");
 }

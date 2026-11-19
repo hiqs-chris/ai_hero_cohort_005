@@ -1,9 +1,8 @@
 import { eq } from "drizzle-orm";
-import type { BetterSQLite3Database } from "drizzle-orm/better-sqlite3";
-import * as schema from "~/db/schema";
 import { comments, courses, lessons, modules, users, UserRole } from "~/db/schema";
 import { MIN_COMMENT_LENGTH, MAX_COMMENT_LENGTH } from "~/lib/comments";
 import { emit, type SendPlan } from "~/lib/notifications/emit.server";
+import type { Queryable } from "~/lib/notifications/catalog";
 
 // ─── Comments ───
 // Everything about creating a Comment: the body rules and the one-level-deep
@@ -14,10 +13,6 @@ import { emit, type SendPlan } from "~/lib/notifications/emit.server";
 //
 // Every function takes the database first, so tests can hand in an in-memory
 // one. Uses positional parameters (project convention).
-
-export type Db = BetterSQLite3Database<typeof schema>;
-type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
-type Queryable = Db | Tx;
 
 type Comment = typeof comments.$inferSelect;
 

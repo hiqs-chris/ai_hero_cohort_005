@@ -16,13 +16,13 @@ import {
   LessonProgressStatus,
   RefundStatus,
 } from "~/db/schema";
-import { formatPrice } from "~/lib/utils";
 import {
   REFUND_COMPLETION_LIMIT,
   REFUND_WATCH_LIMIT_SECONDS,
   REFUND_WINDOW_DAYS,
   type RuleBreak,
 } from "~/lib/refund-rules";
+import { emit, type SendPlan } from "~/lib/notifications/emit.server";
 
 // ─── Refunds ───
 // Everything about Refund Requests: whether a Purchase may be refunded, raising
@@ -75,6 +75,14 @@ function getSeats(db: Queryable, purchaseId: number): Seat[] {
     .from(coupons)
     .where(eq(coupons.purchaseId, purchaseId))
     .all();
+}
+
+function getCourseTitle(db: Queryable, courseId: number) {
+  return db
+    .select({ title: courses.title })
+    .from(courses)
+    .where(eq(courses.id, courseId))
+    .get()?.title;
 }
 
 function isClaimed(seat: Seat) {
@@ -348,10 +356,13 @@ export function getRefundOffer(
   };
 }
 
-export type Email = { to: string; subject: string; body: string };
-
 export type RaiseResult =
-  | { ok: true; refundRequestId: number; kind: PurchaseKind; email: Email }
+  | {
+      ok: true;
+      refundRequestId: number;
+      kind: PurchaseKind;
+      plans: SendPlan[];
+    }
   | Failure;
 
 export function raiseRefundRequest(
@@ -361,51 +372,57 @@ export function raiseRefundRequest(
   reason: string,
   now: Date
 ): RaiseResult {
-  const check = checkRefundRequest(db, purchaseId, buyerId, now);
-  if (!check.ok) return check;
+  return db.transaction((tx): RaiseResult => {
+    const check = checkRefundRequest(tx, purchaseId, buyerId, now);
+    if (!check.ok) return check;
 
-  const { purchase } = check;
-  const buyer = db.select().from(users).where(eq(users.id, buyerId)).get();
-  const course = db
-    .select()
-    .from(courses)
-    .where(eq(courses.id, purchase.courseId))
-    .get();
+    const { purchase } = check;
+    const buyer = tx.select().from(users).where(eq(users.id, buyerId)).get();
+    const course = tx
+      .select()
+      .from(courses)
+      .where(eq(courses.id, purchase.courseId))
+      .get();
 
-  if (!buyer || !course) {
-    return { ok: false, status: 404, error: "Purchase not found." };
-  }
+    if (!buyer || !course) {
+      return { ok: false, status: 404, error: "Purchase not found." };
+    }
 
-  const refundRequest = db
-    .insert(refunds)
-    .values({
-      purchaseId: purchase.id,
-      status: RefundStatus.Open,
-      reason,
-      requestedAt: now.toISOString(),
-    })
-    .returning()
-    .get();
+    const purchaseKind = kindOf(getSeats(tx, purchase.id));
 
-  return {
-    ok: true,
-    refundRequestId: refundRequest.id,
-    kind: kindOf(getSeats(db, purchase.id)),
-    email: {
-      to: buyer.email,
-      subject: `Refund requested — ${course.title}`,
-      body: [
-        `Hi ${buyer.name},`,
-        "",
-        `We have your refund request for "${course.title}".`,
-        `The refund is for ${formatPrice(purchase.amountPaid)}, the amount you paid.`,
-        "",
-        "Our team reviews every refund request by hand. You do not need to do anything else — we will email you again when it is done.",
-        "",
-        "— The Cadence team",
-      ].join("\n"),
-    },
-  };
+    const refundRequest = tx
+      .insert(refunds)
+      .values({
+        purchaseId: purchase.id,
+        status: RefundStatus.Open,
+        reason,
+        requestedAt: now.toISOString(),
+      })
+      .returning()
+      .get();
+
+    const plans = [
+      emit(tx, "refund_request.raised", {
+        buyerName: buyer.name,
+        courseTitle: course.title,
+        amountPaid: purchase.amountPaid,
+        purchaseKind,
+        reason,
+      }),
+      emit(tx, "refund_request.received", {
+        buyerId,
+        courseTitle: course.title,
+        amountPaid: purchase.amountPaid,
+      }),
+    ];
+
+    return {
+      ok: true,
+      refundRequestId: refundRequest.id,
+      kind: purchaseKind,
+      plans,
+    };
+  });
 }
 
 // ─── Listing Refund Requests ───
@@ -568,7 +585,7 @@ export function listTeamLicences(db: Queryable, buyerId: number, now: Date) {
 
 // ─── Deciding a Refund Request ───
 
-export type DecisionResult = { ok: true; email: Email } | Failure;
+export type DecisionResult = { ok: true; plans: SendPlan[] } | Failure;
 
 function findOpenRefundRequest(
   tx: Queryable,
@@ -679,7 +696,15 @@ export function approveRefundRequest(
 
     return {
       ok: true,
-      email: buildDecisionEmail(tx, purchase, RefundStatus.Approved, note),
+      plans: [
+        emit(tx, "refund_request.decided", {
+          buyerId: purchase.userId,
+          courseTitle: getCourseTitle(tx, purchase.courseId) ?? "your course",
+          amountPaid: purchase.amountPaid,
+          decision: RefundStatus.Approved,
+          note,
+        }),
+      ],
     };
   });
 }
@@ -722,60 +747,16 @@ export function declineRefundRequest(
 
     return {
       ok: true,
-      email: buildDecisionEmail(
-        tx,
-        found.purchase,
-        RefundStatus.Declined,
-        trimmedNote
-      ),
+      plans: [
+        emit(tx, "refund_request.decided", {
+          buyerId: found.purchase.userId,
+          courseTitle:
+            getCourseTitle(tx, found.purchase.courseId) ?? "your course",
+          amountPaid: found.purchase.amountPaid,
+          decision: RefundStatus.Declined,
+          note: trimmedNote,
+        }),
+      ],
     };
   });
-}
-
-/** The email the buyer gets once their Refund Request is decided. */
-function buildDecisionEmail(
-  db: Queryable,
-  purchase: Purchase,
-  decision: RefundStatus.Approved | RefundStatus.Declined,
-  note: string | null
-): Email {
-  const buyer = db
-    .select()
-    .from(users)
-    .where(eq(users.id, purchase.userId))
-    .get();
-  const course = db
-    .select()
-    .from(courses)
-    .where(eq(courses.id, purchase.courseId))
-    .get();
-
-  const courseTitle = course?.title ?? "your course";
-  const noteLines = note ? ["", note] : [];
-
-  const middle =
-    decision === RefundStatus.Approved
-      ? [
-          `We have approved your refund request for "${courseTitle}".`,
-          `${formatPrice(purchase.amountPaid)}, the full amount you paid, is on its way back to you.`,
-          ...noteLines,
-        ]
-      : [
-          `We have looked at your refund request for "${courseTitle}" and decided not to refund it.`,
-          ...noteLines,
-          "",
-          "You still have everything you bought. If something changes, you can raise a new refund request.",
-        ];
-
-  return {
-    to: buyer?.email ?? "",
-    subject: `Refund ${decision} — ${courseTitle}`,
-    body: [
-      `Hi ${buyer?.name ?? "there"},`,
-      "",
-      ...middle,
-      "",
-      "— The Cadence team",
-    ].join("\n"),
-  };
 }

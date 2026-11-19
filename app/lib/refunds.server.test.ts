@@ -157,6 +157,20 @@ function getSeat(seatId: number) {
   return seat;
 }
 
+function notificationRows(userId: number) {
+  return db
+    .select()
+    .from(schema.notifications)
+    .where(eq(schema.notifications.userId, userId))
+    .all();
+}
+
+function decidedRow(userId: number) {
+  return notificationRows(userId).find(
+    (row) => row.eventKey === "refund_request.decided"
+  );
+}
+
 describe("raising a Refund Request", () => {
   it("lets the buyer raise one on an Individual Purchase inside the window", () => {
     const purchase = buyForSelf(base.user.id);
@@ -234,6 +248,40 @@ describe("raising a Refund Request", () => {
       ok: false,
       status: 403,
     });
+  });
+
+  it("tells every Platform Admin and the buyer through the pipeline", () => {
+    const purchase = buyForSelf(base.user.id);
+
+    const result = raiseRefundRequest(
+      db,
+      purchase.id,
+      base.user.id,
+      "It was not what I expected.",
+      NOW
+    );
+
+    if (!result.ok) throw new Error(result.error);
+    expect(result.plans.map((p) => p.eventKey)).toEqual([
+      "refund_request.raised",
+      "refund_request.received",
+    ]);
+    expect(notificationRows(platformAdmin.id)).toMatchObject([
+      {
+        eventKey: "refund_request.raised",
+        title: "Refund request raised",
+        body: "Test Course · Individual Purchase · $79.00 · Test User",
+        link: "/admin/refunds",
+      },
+    ]);
+    expect(notificationRows(base.user.id)).toMatchObject([
+      {
+        eventKey: "refund_request.received",
+        title: "Refund request received",
+        body: '"Test Course" · $79.00',
+        link: "/settings",
+      },
+    ]);
   });
 });
 
@@ -363,9 +411,14 @@ describe("approving a Refund Request", () => {
     const result = approveRefundRequest(db, id, platformAdmin.id, null, NOW);
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.email.to).toBe("test@example.com");
-    expect(result.email.subject).toBe("Refund approved — Test Course");
-    expect(result.email.body).toContain("$79.00");
+    expect(result.plans.map((p) => p.eventKey)).toEqual([
+      "refund_request.decided",
+    ]);
+    expect(decidedRow(base.user.id)).toMatchObject({
+      title: "Refund approved",
+      body: '"Test Course" · $79.00',
+      link: "/settings",
+    });
   });
 });
 
@@ -393,7 +446,15 @@ describe("declining a Refund Request", () => {
     );
 
     if (!result.ok) throw new Error(result.error);
-    expect(result.email.body).toContain("You finished the course.");
+    expect(result.plans.map((p) => p.eventKey)).toEqual([
+      "refund_request.decided",
+    ]);
+    expect(decidedRow(base.user.id)).toMatchObject({
+      title: "Refund declined",
+      body: '"Test Course" · $79.00',
+      link: "/settings",
+    });
+    expect(result.plans[0].emails[0].body).toContain("You finished the course.");
     expect(isEnrolled(base.user.id)).toBe(true);
     expect(checkRefundRequest(db, purchase.id, base.user.id, NOW).ok).toBe(true);
   });

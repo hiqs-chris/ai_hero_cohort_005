@@ -1,6 +1,6 @@
 # Cadence
 
-Cadence sells video courses to students. This glossary covers the language around buying, taking and refunding courses.
+Cadence sells video courses to students. This glossary covers the language around buying, taking, refunding, and being notified about courses.
 
 ## Language
 
@@ -92,3 +92,37 @@ A Refund where the money couldn't be sent. The Refund Request stays approved, be
 **Watch Limit**:
 The amount of Watched time on a course past which a Student can no longer get a Refund, because they've had the course.
 _Avoid_: Watch cap, Viewing threshold
+
+### Notifications
+
+**Notification**:
+Cadence telling one user that something happened. Each happening is its own Notification for each person it is addressed to, and a Notification never changes once it is created.
+_Avoid_: Alert, Message, Ping
+
+**Notification Event**:
+A catalog entry delivered per the recipient's event×channel preferences — in-app always, email and push as preferred. A happening may emit several events, each with exactly one kind.
+_Avoid_: Optional event, Preferenced event, Class
+
+**Transactional Event**:
+A catalog entry that is always delivered on every channel it can appear on — email and in-app, never push. It is exempt from notification preferences.
+_Avoid_: System email, Mandatory event
+
+**Notification Catalog**:
+The registry of every happening Cadence tells people about, each entry naming its kind, who it is addressed to, and what it says on each channel. Adding a happening to tell people about is adding an entry.
+_Avoid_: Event list, Registry
+
+**Notification Preferences**:
+A user's choices, one per Notification Event per channel — in-app, email, or push — for which events reach them where. All on by default, and a Transactional Event is exempt.
+_Avoid_: Notification settings, the matrix, subscriptions
+
+**Unread Notification**:
+A Notification its recipient has not read yet. The bell's count is a user's Unread Notifications.
+_Avoid_: New, Pending, Unseen
+
+**Read Notification**:
+A Notification its recipient has read, by opening it or marking it read. Only the recipient can read a Notification — what happens to the thing it is about never does — and a Read Notification stays read.
+_Avoid_: Seen, Acknowledged, Handled
+
+**Device**:
+A phone or computer a user has turned on push notifications from, listed in Settings under "Your devices". A Device belongs to the user who turned it on and manages itself — only the browser that subscribed can turn it off.
+_Avoid_: Phone, Browser, Push token

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "request-logger/code-model",
+  "small_model": "request-logger/code-model",
+  "plugin": ["opencode-context-indicator@1.8.5"],
+  "providers": {
+    "request-logger": {
+      "name": "Request Logger",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://localhost:8787",
+        "apiKey": "sk-nCpBUIy5rGPueOa0AADsPg"
+      },
+      "models": {
+        "code-model": {
+          "name": "code-model",
+          "capabilities": {
+            "tools": true,
+            "input": ["text", "image"],
+            "output": ["text"]
+          },
+          "limit": {
+            "context": 149000,
+            "output": 24000
+          },
+          "settings": {
+            "num_retries": 5,
+            "timeout": 660000,
+            "chunkTimeout": 120000
+          }
+        }
+      }
+    }
+  },
+  "compaction": {
+    "auto": false,
+    "keep": {
+      "tokens": 30000
+    },
+    "buffer": "40%"
+  }
+}

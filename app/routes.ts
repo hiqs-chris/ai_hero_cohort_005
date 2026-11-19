@@ -55,4 +55,5 @@ export default [
   route("api/video-tracking", "routes/api.video-tracking.ts"),
   route("api/set-dev-country", "routes/api.set-dev-country.ts"),
   route("notifications", "routes/notifications.ts"),
+  route("devices", "routes/devices.ts"),
 ] satisfies RouteConfig;

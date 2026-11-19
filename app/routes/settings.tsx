@@ -10,18 +10,32 @@ import { Button } from "~/components/ui/button";
 import { Input } from "~/components/ui/input";
 import { Label } from "~/components/ui/label";
 import { Textarea } from "~/components/ui/textarea";
-import { UserRole, RefundStatus, users } from "~/db/schema";
-import { AlertTriangle } from "lucide-react";
+import { UserRole, RefundStatus, users, devices, NotificationChannel } from "~/db/schema";
+import { AlertTriangle, Lock } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
 import { db } from "~/db";
 import { eq } from "drizzle-orm";
 import { formatPrice } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
+import { getOffRows, setPreferenceOff, setPreferenceOn } from "~/lib/notifications/preferences.server";
+import type { EventKey } from "~/lib/notifications/catalog";
 
 const settingsSchema = z.object({
   name: z.string().trim().min(1, "Name cannot be empty."),
   bio: z.string().trim().optional(),
 });
+
+const preferenceSchema = z.object({
+  eventKey: z.string().min(1),
+  channel: z.enum([NotificationChannel.InApp, NotificationChannel.Email, NotificationChannel.Push]),
+  state: z.enum(["on", "off"]),
+});
+
+/** The Settings card title: "question.asked" → "Question asked". */
+function cardTitle(key: string): string {
+  const title = key.replace(/[._]/g, " ");
+  return title.charAt(0).toUpperCase() + title.slice(1);
+}
 
 export function meta() {
   return [
@@ -51,6 +65,39 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   const refundRequests = listRefundRequestsForBuyer(db, currentUserId);
 
+  // Cards come from the catalog at runtime, filtered to the events this
+  // user's role can receive. The catalog is imported dynamically so it never
+  // reaches the client bundle.
+  const { catalog } = await import("~/lib/notifications/catalog");
+  const offRows = getOffRows(db, currentUserId);
+
+  const notificationCards = Object.values(catalog)
+    .filter(
+      (entry) =>
+        entry.kind === "notification" &&
+        (!entry.roles || entry.roles.includes(currentUser.role))
+    )
+    .map((entry) => ({
+      key: entry.key,
+      title: cardTitle(entry.key),
+      audience: entry.audience,
+      blurb: entry.blurb,
+      offChannels: offRows
+        .filter((row) => row.eventKey === entry.key)
+        .map((row) => row.channel),
+    }));
+
+  const transactionalEvents = Object.values(catalog)
+    .filter((entry) => entry.kind === "transactional")
+    .map((entry) => ({ key: entry.key, title: cardTitle(entry.key) }));
+
+  const hasDevice =
+    db
+      .select({ id: devices.id })
+      .from(devices)
+      .where(eq(devices.userId, currentUserId))
+      .all().length > 0;
+
   return {
     user: {
       id: currentUser.id,
@@ -60,6 +107,9 @@ export async function loader({ request }: Route.LoaderArgs) {
       role: currentUser.role,
     },
     refundRequests,
+    notificationCards,
+    transactionalEvents,
+    hasDevice,
   };
 }
 
@@ -80,6 +130,42 @@ export async function action({ request }: Route.ActionArgs) {
   }
 
   const formData = await request.formData();
+
+  // One cell of the event×channel matrix: turn it on or off. The profile
+  // form posts without an intent and falls through unchanged.
+  if (formData.get("intent") === "notification_preference") {
+    const parsed = parseFormData(formData, preferenceSchema);
+
+    if (!parsed.success) {
+      return data({ errors: parsed.errors }, { status: 400 });
+    }
+
+    const { eventKey, channel, state } = parsed.data;
+    const { catalog } = await import("~/lib/notifications/catalog");
+
+    if (!(eventKey in catalog)) {
+      return data(
+        { errors: { eventKey: "Unknown notification event." } },
+        { status: 400 }
+      );
+    }
+
+    try {
+      if (state === "on") {
+        setPreferenceOn(db, currentUserId, eventKey as EventKey, channel);
+      } else {
+        setPreferenceOff(db, currentUserId, eventKey as EventKey, channel);
+      }
+    } catch (error) {
+      throw data(
+        error instanceof Error ? error.message : "Could not save preference.",
+        { status: 400 }
+      );
+    }
+
+    return { success: true };
+  }
+
   const parsed = parseFormData(formData, settingsSchema);
 
   if (!parsed.success) {
@@ -98,7 +184,8 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests } = loaderData;
+  const { user, refundRequests, notificationCards, transactionalEvents, hasDevice } =
+    loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
@@ -188,6 +275,53 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
         </CardContent>
       </Card>
 
+      <section className="mt-8 max-w-xl space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Notifications</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Each notification event, and where you want it. The always-sent
+            events sit underneath, out of your way.
+          </p>
+        </div>
+
+        {notificationCards.map((card) => (
+          <PreferenceCard key={card.key} card={card} hasDevice={hasDevice} />
+        ))}
+
+        {!hasDevice && (
+          <p className="text-xs text-muted-foreground">
+            Push needs a Device: turn notifications on from your phone or
+            browser first. Until then the Push toggles do nothing.
+          </p>
+        )}
+
+        <div className="rounded-xl border border-dashed bg-muted/30 p-4">
+          <div className="flex items-center gap-2">
+            <Lock className="size-4 text-muted-foreground" />
+            <h3 className="text-sm font-semibold">
+              Always sent — no preferences
+            </h3>
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Transactional events land in your notification list and your inbox
+            whatever you choose here. They never push.
+          </p>
+          <ul className="mt-3 space-y-2">
+            {transactionalEvents.map((event) => (
+              <li
+                key={event.key}
+                className="flex items-center justify-between gap-4 text-sm"
+              >
+                <span>{event.title}</span>
+                <span className="text-xs text-muted-foreground">
+                  Email + in-app, always
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
       {refundRequests.length > 0 && (
         <Card className="mt-8 max-w-md">
           <CardHeader>
@@ -235,6 +369,115 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
           </CardContent>
         </Card>
       )}
+    </div>
+  );
+}
+
+const CHANNELS: { channel: NotificationChannel; label: string }[] = [
+  { channel: NotificationChannel.InApp, label: "In-app" },
+  { channel: NotificationChannel.Email, label: "Email" },
+  { channel: NotificationChannel.Push, label: "Push" },
+];
+
+/** One cell of the event×channel matrix: a labelled on/off switch. */
+function PreferenceToggle({
+  title,
+  eventKey,
+  channel,
+  label,
+  defaultOn,
+  disabled,
+}: {
+  title: string;
+  eventKey: string;
+  channel: NotificationChannel;
+  label: string;
+  defaultOn: boolean;
+  disabled: boolean;
+}) {
+  const fetcher = useFetcher();
+
+  // The last submission keeps rendering while it flies, so the switch
+  // shows what the user just chose rather than the stale loader value.
+  const state = fetcher.formData?.get("state");
+  const on = state === "on" ? true : state === "off" ? false : defaultOn;
+
+  useEffect(() => {
+    if (fetcher.state === "idle" && fetcher.data?.errors) {
+      const firstError = Object.values(fetcher.data.errors)[0] as
+        | string
+        | undefined;
+      if (firstError) toast.error(firstError);
+    }
+  }, [fetcher.state, fetcher.data]);
+
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-label={`${title} — ${label}`}
+        disabled={disabled}
+        onClick={() =>
+          fetcher.submit(
+            {
+              intent: "notification_preference",
+              eventKey,
+              channel,
+              state: on ? "off" : "on",
+            },
+            { method: "post" }
+          )
+        }
+        className="disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        <span
+          className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors ${
+            on ? "bg-primary" : "bg-muted"
+          }`}
+        >
+          <span
+            className={`size-4 rounded-full bg-background shadow transition-transform ${
+              on ? "translate-x-4" : "translate-x-0.5"
+            }`}
+          />
+        </span>
+      </button>
+      <span className="text-[11px] text-muted-foreground">{label}</span>
+    </div>
+  );
+}
+
+/** One Settings card: the event's title and audience, plus its toggles. */
+function PreferenceCard({
+  card,
+  hasDevice,
+}: {
+  card: Route.ComponentProps["loaderData"]["notificationCards"][number];
+  hasDevice: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 rounded-xl border p-4">
+      <div>
+        <p className="text-sm font-medium">{card.title}</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Addressed to {card.audience} · {card.blurb}
+        </p>
+      </div>
+      <div className="flex items-center gap-4">
+        {CHANNELS.map(({ channel, label }) => (
+          <PreferenceToggle
+            key={channel}
+            title={card.title}
+            eventKey={card.key}
+            channel={channel}
+            label={label}
+            defaultOn={!card.offChannels.includes(channel)}
+            disabled={channel === NotificationChannel.Push && !hasDevice}
+          />
+        ))}
+      </div>
     </div>
   );
 }

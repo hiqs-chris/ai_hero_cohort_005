@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useFetcher, useNavigate } from "react-router";
 import { Bell, Inbox, Receipt, type LucideIcon } from "lucide-react";
 import { cn, formatRelativeTime } from "~/lib/utils";
+import { UserRole } from "~/db/schema";
+import { Button } from "~/components/ui/button";
+import { PushPrePrompt } from "~/components/push-pre-prompt";
 
 type NotificationItem = {
   id: number;
@@ -26,10 +29,19 @@ const EVENT_ICONS: Record<string, LucideIcon> = {
   "refund_request.decided": Inbox,
 };
 
-export function NotificationBell({ unreadCount }: { unreadCount: number }) {
+export function NotificationBell({
+  unreadCount,
+  role,
+  vapidPublicKey,
+}: {
+  unreadCount: number;
+  role: UserRole;
+  vapidPublicKey: string | null;
+}) {
   const fetcher = useFetcher<NotificationsPayload>();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const [prePromptOpen, setPrePromptOpen] = useState(false);
   const [count, setCount] = useState(unreadCount);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -143,9 +155,23 @@ export function NotificationBell({ unreadCount }: { unreadCount: number }) {
                 Loading…
               </p>
             ) : rows.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-                You're all caught up
-              </p>
+              <div className="space-y-3 px-4 py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Refund Requests and Questions can reach your phone. Push
+                  carries notification events only — receipts and decisions
+                  stay in your inbox.
+                </p>
+                {vapidPublicKey && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPrePromptOpen(true)}
+                  >
+                    Turn on push notifications
+                  </Button>
+                )}
+              </div>
             ) : (
               rows.map((notification) => {
                 const Icon = EVENT_ICONS[notification.eventKey] ?? Bell;
@@ -197,6 +223,15 @@ export function NotificationBell({ unreadCount }: { unreadCount: number }) {
             </Link>
           </div>
         </div>
+      )}
+
+      {prePromptOpen && (
+        <PushPrePrompt
+          role={role}
+          vapidPublicKey={vapidPublicKey}
+          onClose={() => setPrePromptOpen(false)}
+          onTurnedOn={() => setPrePromptOpen(false)}
+        />
       )}
     </div>
   );

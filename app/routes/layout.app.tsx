@@ -241,6 +241,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
     countries,
     isTeamAdmin: userIsTeamAdmin,
     unreadNotificationCount,
+    vapidPublicKey,
   } = loaderData;
 
   return (
@@ -250,6 +251,7 @@ export default function AppLayout({ loaderData }: Route.ComponentProps) {
         recentCourses={recentCourses}
         isTeamAdmin={userIsTeamAdmin}
         unreadNotificationCount={unreadNotificationCount}
+        vapidPublicKey={vapidPublicKey}
       />
       <main className="flex-1 overflow-y-auto">
         <Outlet />

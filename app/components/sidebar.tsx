@@ -43,6 +43,7 @@ interface SidebarProps {
   recentCourses?: RecentCourse[];
   isTeamAdmin?: boolean;
   unreadNotificationCount?: number;
+  vapidPublicKey?: string | null;
 }
 
 interface NavItem {
@@ -120,6 +121,7 @@ export function Sidebar({
   recentCourses = [],
   isTeamAdmin = false,
   unreadNotificationCount = 0,
+  vapidPublicKey = null,
 }: SidebarProps) {
   const currentUserRole = currentUser?.role ?? null;
   const [isDark, setIsDark] = useState(false);
@@ -245,7 +247,11 @@ export function Sidebar({
                 {currentUser.role}
               </div>
             </div>
-            <NotificationBell unreadCount={unreadNotificationCount} />
+            <NotificationBell
+              unreadCount={unreadNotificationCount}
+              role={currentUser.role}
+              vapidPublicKey={vapidPublicKey}
+            />
             <NavLink
               to="/settings"
               title="Settings"

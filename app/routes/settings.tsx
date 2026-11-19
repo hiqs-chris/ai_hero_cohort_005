@@ -1,5 +1,5 @@
-import { useRef, useEffect } from "react";
-import { useFetcher } from "react-router";
+import { useRef, useEffect, useState } from "react";
+import { useFetcher, useNavigate } from "react-router";
 import { toast } from "sonner";
 import { z } from "zod";
 import type { Route } from "./+types/settings";
@@ -15,9 +15,10 @@ import { AlertTriangle, Lock } from "lucide-react";
 import { data, isRouteErrorResponse, Link } from "react-router";
 import { db } from "~/db";
 import { eq } from "drizzle-orm";
-import { formatPrice } from "~/lib/utils";
+import { formatPrice, formatRelativeTime } from "~/lib/utils";
 import { listRefundRequestsForBuyer } from "~/lib/refunds.server";
 import { getOffRows, setPreferenceOff, setPreferenceOn } from "~/lib/notifications/preferences.server";
+import { PushPrePrompt } from "~/components/push-pre-prompt";
 import type { EventKey } from "~/lib/notifications/catalog";
 
 const settingsSchema = z.object({
@@ -91,12 +92,18 @@ export async function loader({ request }: Route.LoaderArgs) {
     .filter((entry) => entry.kind === "transactional")
     .map((entry) => ({ key: entry.key, title: cardTitle(entry.key) }));
 
-  const hasDevice =
-    db
-      .select({ id: devices.id })
-      .from(devices)
-      .where(eq(devices.userId, currentUserId))
-      .all().length > 0;
+  const deviceRows = db
+    .select({
+      id: devices.id,
+      label: devices.label,
+      lastSeenAt: devices.lastSeenAt,
+      endpoint: devices.endpoint,
+    })
+    .from(devices)
+    .where(eq(devices.userId, currentUserId))
+    .all();
+
+  const hasDevice = deviceRows.length > 0;
 
   return {
     user: {
@@ -109,7 +116,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     refundRequests,
     notificationCards,
     transactionalEvents,
+    devices: deviceRows,
     hasDevice,
+    // Null means push is not configured and the turn-on entry points stay hidden.
+    vapidPublicKey: process.env.VAPID_PUBLIC_KEY ?? null,
   };
 }
 
@@ -184,13 +194,72 @@ export async function action({ request }: Route.ActionArgs) {
 }
 
 export default function Settings({ loaderData }: Route.ComponentProps) {
-  const { user, refundRequests, notificationCards, transactionalEvents, hasDevice } =
-    loaderData;
+  const {
+    user,
+    refundRequests,
+    notificationCards,
+    transactionalEvents,
+    hasDevice,
+    devices: deviceRows,
+    vapidPublicKey,
+  } = loaderData;
   const openCount = refundRequests.filter(
     (refundRequest) => refundRequest.status === RefundStatus.Open
   ).length;
   const fetcher = useFetcher();
+  const navigate = useNavigate();
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const [browserEndpoint, setBrowserEndpoint] = useState<string | null>(null);
+  const [checkedBrowser, setCheckedBrowser] = useState(false);
+  const [turningOff, setTurningOff] = useState(false);
+  const [prePromptOpen, setPrePromptOpen] = useState(false);
+
+  // Which device row (if any) is this browser? A null endpoint still counts
+  // as checked — it just means no subscription lives here.
+  useEffect(() => {
+    if (!("serviceWorker" in navigator)) return;
+    let cancelled = false;
+    navigator.serviceWorker
+      .getRegistration()
+      .then((registration) => registration?.pushManager.getSubscription())
+      .then((subscription) => {
+        if (cancelled) return;
+        setBrowserEndpoint(subscription?.endpoint ?? null);
+        setCheckedBrowser(true);
+      })
+      .catch(() => {
+        if (!cancelled) setCheckedBrowser(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Unsubscribe this browser and delete its Device row, then reload. */
+  async function turnOff(endpoint: string) {
+    setTurningOff(true);
+    try {
+      if ("serviceWorker" in navigator) {
+        const registration = await navigator.serviceWorker.getRegistration();
+        const subscription = await registration?.pushManager.getSubscription();
+        if (subscription?.endpoint === endpoint) {
+          await subscription.unsubscribe();
+        }
+      }
+      const res = await fetch("/devices", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ endpoint }),
+      });
+      if (!res.ok) {
+        toast.error("Could not turn off push on this device. Try again.");
+        return;
+      }
+      navigate(0);
+    } finally {
+      setTurningOff(false);
+    }
+  }
 
   useEffect(() => {
     if (fetcher.state === "idle" && fetcher.data?.success) {
@@ -288,7 +357,12 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
           <PreferenceCard key={card.key} card={card} hasDevice={hasDevice} />
         ))}
 
-        {!hasDevice && (
+        {hasDevice ? (
+          <p className="text-xs text-muted-foreground">
+            Push is live for your Device — turning an event&apos;s push off
+            stops it on every Device.
+          </p>
+        ) : (
           <p className="text-xs text-muted-foreground">
             Push needs a Device: turn notifications on from your phone or
             browser first. Until then the Push toggles do nothing.
@@ -320,6 +394,67 @@ export default function Settings({ loaderData }: Route.ComponentProps) {
             ))}
           </ul>
         </div>
+      </section>
+
+      <section className="mt-8 max-w-xl space-y-4">
+        <div>
+          <h2 className="text-lg font-semibold">Your devices</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            One Device per browser or phone where you turned push on.
+          </p>
+        </div>
+
+        {deviceRows.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No Devices yet. Turn push on and this browser becomes one.
+          </p>
+        ) : (
+          deviceRows.map((device) => (
+            <div
+              key={device.id}
+              className="flex items-center justify-between gap-4 rounded-xl border p-4"
+            >
+              <div className="min-w-0">
+                <p className="text-sm font-medium">{device.label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Last seen {formatRelativeTime(device.lastSeenAt)}
+                </p>
+              </div>
+              {device.endpoint === browserEndpoint && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={turningOff}
+                  onClick={() => turnOff(device.endpoint)}
+                >
+                  {turningOff ? "Turning off…" : "Turn off"}
+                </Button>
+              )}
+            </div>
+          ))
+        )}
+
+        {checkedBrowser &&
+          !deviceRows.some((device) => device.endpoint === browserEndpoint) &&
+          vapidPublicKey && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPrePromptOpen(true)}
+            >
+              Turn on push on this device
+            </Button>
+          )}
+
+        {prePromptOpen && (
+          <PushPrePrompt
+            role={user.role}
+            vapidPublicKey={vapidPublicKey}
+            onClose={() => setPrePromptOpen(false)}
+            onTurnedOn={() => navigate(0)}
+          />
+        )}
       </section>
 
       {refundRequests.length > 0 && (

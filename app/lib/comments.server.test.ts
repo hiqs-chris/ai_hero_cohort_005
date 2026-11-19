@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { createTestDb, seedBaseData } from "~/test/setup";
 import * as schema from "~/db/schema";
 import { createComment } from "./comments.server";
+import { MAX_COMMENT_LENGTH } from "~/lib/comments";
 
 type TestDb = ReturnType<typeof createTestDb>;
 
@@ -107,5 +108,29 @@ describe("creating a comment", () => {
     expect(() => ask("Replying to what?", 999)).toThrow(
       "Parent comment not found"
     );
+  });
+
+  it("refuses an empty comment", () => {
+    expect(() => ask("   ")).toThrow("Comment cannot be empty");
+
+    expect(db.select().from(schema.comments).all()).toHaveLength(0);
+  });
+
+  it("refuses a comment past the length limit", () => {
+    expect(() => ask("x".repeat(MAX_COMMENT_LENGTH + 1))).toThrow(
+      `Comment must be ${MAX_COMMENT_LENGTH} characters or fewer`
+    );
+  });
+
+  it("accepts a comment at the length limit", () => {
+    const comment = ask("x".repeat(MAX_COMMENT_LENGTH));
+
+    expect(comment.body).toHaveLength(MAX_COMMENT_LENGTH);
+  });
+
+  it("refuses a comment on a lesson that does not exist", () => {
+    expect(() =>
+      createComment(db, base.user.id, 999, null, "Where am I?")
+    ).toThrow("Lesson not found");
   });
 });

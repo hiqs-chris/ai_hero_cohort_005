@@ -100,7 +100,7 @@ Cadence telling one user that something happened. Each happening is its own Noti
 _Avoid_: Alert, Message, Ping
 
 **Notification Event**:
-A catalog entry delivered per the recipient's event×channel preferences — in-app always, email and push as preferred. A happening may emit several events, each with exactly one kind.
+A catalog entry delivered per the recipient's event×channel preferences — in-app, email, and push, each as the recipient prefers. A happening may emit several events, each with exactly one kind.
 _Avoid_: Optional event, Preferenced event, Class
 
 **Transactional Event**:

@@ -78,6 +78,16 @@ export type RefundRequestDecidedPayload = {
   note: string | null;
 };
 
+// ─── Question payloads ───
+
+export type QuestionAskedPayload = {
+  instructorId: number;
+  courseTitle: string;
+  lessonTitle: string;
+  askerName: string;
+  question: string;
+};
+
 // ─── The entries ───
 
 const refundRequestRaised: CatalogEntry<RefundRequestRaisedPayload> = {
@@ -220,6 +230,51 @@ const refundRequestDecided: CatalogEntry<RefundRequestDecidedPayload> = {
   },
 };
 
+const questionAsked: CatalogEntry<QuestionAskedPayload> = {
+  key: "question.asked",
+  kind: "notification",
+  icon: "CircleHelp",
+  audience: "the course's instructor",
+  blurb: "Someone asked a question on your course",
+  recipients(tx, payload) {
+    // The question queue is the instructor's own view of their course, so
+    // the course's instructor is told — resolved from the payload like the
+    // buyer of refund_request.received.
+    const instructor = tx
+      .select()
+      .from(users)
+      .where(eq(users.id, payload.instructorId))
+      .get();
+    return instructor ? [instructor] : [];
+  },
+  renderInApp(payload) {
+    return {
+      title: "New question",
+      body: `${payload.courseTitle} · ${payload.lessonTitle} · ${payload.askerName}`,
+      link: "/instructor/questions",
+    };
+  },
+  renderEmail(payload, recipient) {
+    return {
+      subject: `New question on ${payload.courseTitle}`,
+      body: [
+        `Hi ${recipient.name},`,
+        "",
+        `${payload.askerName} asked a question on "${payload.courseTitle}".`,
+        "",
+        `Lesson: ${payload.lessonTitle}`,
+        "",
+        `"${payload.question}"`,
+        "",
+        "Reply from your question queue, newest first:",
+        `${appUrl()}/instructor/questions`,
+        "",
+        `Manage your notification settings: ${appUrl()}/settings`,
+      ].join("\n"),
+    };
+  },
+};
+
 // ─── The registry ───
 // satisfies keeps each entry's own payload type, so EventKey and PayloadFor
 // stay precise without any.
@@ -227,6 +282,7 @@ export const catalog = {
   "refund_request.raised": refundRequestRaised,
   "refund_request.received": refundRequestReceived,
   "refund_request.decided": refundRequestDecided,
+  "question.asked": questionAsked,
 } satisfies Record<string, CatalogEntry<never>>;
 
 export type EventKey = keyof typeof catalog;

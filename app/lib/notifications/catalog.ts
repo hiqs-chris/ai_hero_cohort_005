@@ -28,6 +28,10 @@ export type EventKind = "transactional" | "notification";
 export type CatalogEntry<P> = {
   key: string;
   kind: EventKind;
+  // Notification Events only. Omitted means every role gets a Settings card;
+  // Settings filters on it at runtime, so a role change or a new entry needs
+  // no backfill.
+  roles?: UserRole[];
   icon: string; // a lucide icon name, for the in-app list row
   audience: string; // Settings card line: who the event is addressed to
   blurb: string; // Settings card line: what the event reports
@@ -93,6 +97,7 @@ export type QuestionAskedPayload = {
 const refundRequestRaised: CatalogEntry<RefundRequestRaisedPayload> = {
   key: "refund_request.raised",
   kind: "notification",
+  roles: [UserRole.Admin],
   icon: "Receipt",
   audience: "Platform Admins",
   blurb: "A buyer raised a Refund Request",
@@ -233,6 +238,7 @@ const refundRequestDecided: CatalogEntry<RefundRequestDecidedPayload> = {
 const questionAsked: CatalogEntry<QuestionAskedPayload> = {
   key: "question.asked",
   kind: "notification",
+  roles: [UserRole.Instructor],
   icon: "CircleHelp",
   audience: "the course's instructor",
   blurb: "Someone asked a question on your course",
